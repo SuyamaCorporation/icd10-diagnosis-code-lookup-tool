@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ICD-10疾患分類コードルックアップツール</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <header class="bg-blue-900 text-white p-4 shadow">
+    <h1 class="text-xl font-bold text-center">ICD-10疾患分類コードルックアップツール</h1>
+    <p class="text-blue-300 text-xs text-center mt-1">国際疾病分類 第10版 (ICD-10) コード検索</p>
+  </header>
+
+  <main class="max-w-3xl mx-auto p-4" role="main">
+    <!-- Search -->
+    <section aria-label="コード検索" class="mb-5">
+      <div class="relative">
+        <label for="search-input" class="sr-only">ICD-10コードまたはキーワードで検索</label>
+        <input
+          type="search" id="search-input"
+          placeholder="コード (J00) またはキーワード (感冒, 骨折, 糖尿病...)"
+          class="w-full border border-gray-300 rounded-xl px-5 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-sm text-base"
+          aria-label="ICD-10コードまたはキーワードで検索"
+          autocomplete="off"
+        >
+        <button
+          id="clear-btn"
+          class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none hidden"
+          aria-label="検索をクリア"
+        >
+          ✕
+        </button>
+      </div>
+      <!-- Autocomplete dropdown -->
+      <div id="autocomplete" class="bg-white border border-gray-200 rounded-xl shadow-lg hidden mt-1 max-h-64 overflow-y-auto" role="listbox" aria-label="検索候補"></div>
+    </section>
+
+    <!-- Recent Searches -->
+    <section id="recent-section" aria-label="最近の検索" class="mb-5">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-xs font-semibold text-gray-500">最近の検索</h2>
+        <button
+          id="clear-history-btn"
+          class="text-xs text-gray-400 hover:text-gray-600 focus:outline-none"
+          aria-label="検索履歴をクリア"
+        >
+          クリア
+        </button>
+      </div>
+      <div id="recent-list" class="flex flex-wrap gap-2"></div>
+    </section>
+
+    <!-- Results -->
+    <section aria-label="検索結果" aria-live="polite">
+      <div id="result-count" class="text-xs text-gray-500 mb-3 hidden"></div>
+      <div id="results-list" class="space-y-2"></div>
+      <div id="no-result" class="hidden text-center py-10 text-gray-400">
+        <div class="text-4xl mb-2">🔍</div>
+        <p class="text-sm">該当するコードが見つかりませんでした。</p>
+        <p class="text-xs mt-1">別のキーワードやコードでお試しください。</p>
+      </div>
+      <div id="initial-msg" class="text-center py-10 text-gray-400">
+        <div class="text-4xl mb-2">📋</div>
+        <p class="text-sm">ICD-10コードまたは疾患名（日本語）を入力して検索してください。</p>
+        <p class="text-xs mt-1">例: J00、骨折、心筋梗塞、糖尿病</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Detail Modal -->
+  <div id="detail-modal" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 hidden z-50" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 max-h-screen overflow-y-auto">
+      <div class="flex items-start justify-between mb-4">
+        <div>
+          <span id="modal-code" class="text-2xl font-black text-blue-800 font-mono"></span>
+          <div id="modal-chapter-badge" class="mt-1 inline-block text-xs px-2 py-0.5 rounded-full font-medium"></div>
+        </div>
+        <button
+          id="modal-close"
+          class="text-gray-400 hover:text-gray-600 text-2xl leading-none focus:outline-none focus:ring-2 focus:ring-gray-400 rounded"
+          aria-label="閉じる"
+        >
+          ×
+        </button>
+      </div>
+      <h2 id="modal-title" class="text-xl font-bold text-gray-800 mb-1"></h2>
+      <p id="modal-name-en" class="text-gray-500 text-sm mb-4"></p>
+
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <div class="bg-blue-50 rounded-lg p-3">
+          <div class="text-xs text-blue-600 font-semibold mb-1">章 (Chapter)</div>
+          <div id="modal-chapter" class="font-bold text-blue-800 text-sm"></div>
+        </div>
+        <div class="bg-purple-50 rounded-lg p-3">
+          <div class="text-xs text-purple-600 font-semibold mb-1">ブロック</div>
+          <div id="modal-block" class="font-bold text-purple-800 text-sm"></div>
+        </div>
+        <div class="bg-green-50 rounded-lg p-3">
+          <div class="text-xs text-green-600 font-semibold mb-1">コードカテゴリ</div>
+          <div id="modal-category" class="font-bold text-green-800 text-sm"></div>
+        </div>
+        <div class="bg-orange-50 rounded-lg p-3">
+          <div class="text-xs text-orange-600 font-semibold mb-1">ICD-10 版</div>
+          <div class="font-bold text-orange-800 text-sm">第10版 (2019年版)</div>
+        </div>
+      </div>
+
+      <div id="modal-notes" class="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 hidden">
+        <div class="font-semibold text-gray-700 mb-1">備考</div>
+        <p id="modal-notes-text"></p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ICD-10 data: [code, name_ja, name_en, chapter_num, chapter_name, block, category, notes?]
+    const ICD10_DATA = [
+      // Chapter I: 感染症・寄生虫症 (A00-B99)
+      ['A00','コレラ','Cholera','I','感染症及び寄生虫症','A00-A09 腸管感染症','4桁コード必要'],
+      ['A09','感染性胃腸炎，詳細不明','Infectious gastroenteritis, unspecified','I','感染症及び寄生虫症','A00-A09 腸管感染症',''],
+      ['A15','呼吸器結核（確認済）','Respiratory tuberculosis, bacteriologically confirmed','I','感染症及び寄生虫症','A15-A19 結核',''],
+      ['A37','百日咳','Whooping cough','I','感染症及び寄生虫症','A30-A49 その他の細菌感染症',''],
+      ['A90','デング熱','Dengue fever','I','感染症及び寄生虫症','A75-A79, A80-A89 ウイルス感染症',''],
+      ['B02','帯状疱疹','Zoster (herpes zoster)','I','感染症及び寄生虫症','B00-B09 ウイルス感染症',''],
+      ['B05','麻疹（はしか）','Measles','I','感染症及び寄生虫症','B00-B09 ウイルス感染症',''],
+      ['B34','ウイルス感染，部位不明','Viral infection, unspecified','I','感染症及び寄生虫症','B25-B34 その他のウイルス感染症',''],
+
+      // Chapter II: 新生物 (C00-D48)
+      ['C18','結腸の悪性新生物','Malignant neoplasm of colon','II','新生物','C15-C26 消化器の悪性新生物',''],
+      ['C22','肝臓及び肝内胆管の悪性新生物','Malignant neoplasm of liver','II','新生物','C15-C26 消化器の悪性新生物',''],
+      ['C34','気管支及び肺の悪性新生物','Malignant neoplasm of bronchus and lung','II','新生物','C30-C39 呼吸器及び胸腔内臓器の悪性新生物',''],
+      ['C50','乳房の悪性新生物','Malignant neoplasm of breast','II','新生物','C50 乳房の悪性新生物',''],
+      ['C61','前立腺の悪性新生物','Malignant neoplasm of prostate','II','新生物','C60-C63 男性生殖器の悪性新生物',''],
+      ['C71','脳の悪性新生物','Malignant neoplasm of brain','II','新生物','C69-C72 眼・脳及び中枢神経系の悪性新生物',''],
+
+      // Chapter III: 血液及び造血器の疾患 (D50-D89)
+      ['D50','鉄欠乏性貧血','Iron deficiency anaemia','III','血液及び造血器の疾患','D50-D53 栄養性貧血',''],
+      ['D64','その他の貧血','Other anaemias','III','血液及び造血器の疾患','D55-D64 溶血性貧血及びその他の貧血',''],
+
+      // Chapter IV: 内分泌・栄養・代謝疾患 (E00-E90)
+      ['E10','1型糖尿病','Type 1 diabetes mellitus','IV','内分泌，栄養及び代謝疾患','E10-E14 糖尿病','インスリン依存性'],
+      ['E11','2型糖尿病','Type 2 diabetes mellitus','IV','内分泌，栄養及び代謝疾患','E10-E14 糖尿病','非インスリン依存性'],
+      ['E55','ビタミンD欠乏症','Vitamin D deficiency','IV','内分泌，栄養及び代謝疾患','E50-E64 その他の栄養欠乏症',''],
+      ['E66','肥満','Obesity','IV','内分泌，栄養及び代謝疾患','E65-E68 肥満及びその他の過栄養',''],
+      ['E78','脂質代謝障害','Disorders of lipoprotein metabolism','IV','内分泌，栄養及び代謝疾患','E70-E90 代謝障害','高脂血症含む'],
+
+      // Chapter V: 精神及び行動の障害 (F00-F99)
+      ['F32','うつ病エピソード','Depressive episode','V','精神及び行動の障害','F30-F39 気分（感情）障害',''],
+      ['F41','その他の不安障害','Other anxiety disorders','V','精神及び行動の障害','F40-F48 神経症性，ストレス関連及び身体表現性障害',''],
+      ['F43','重篤なストレスへの反応及び適応障害','Reaction to severe stress','V','精神及び行動の障害','F40-F48 神経症性，ストレス関連及び身体表現性障害','PTSD含む'],
+      ['F90','多動性障害','Hyperkinetic disorders','V','精神及び行動の障害','F90-F98 小児期及び青年期に通常発症する行動及び情緒の障害','ADHD'],
+
+      // Chapter VI: 神経系の疾患 (G00-G99)
+      ['G20','パーキンソン病','Parkinson disease','VI','神経系の疾患','G20-G26 錐体外路性及び運動障害',''],
+      ['G30','アルツハイマー病','Alzheimer disease','VI','神経系の疾患','G30-G32 神経系の変性疾患',''],
+      ['G35','多発性硬化症','Multiple sclerosis','VI','神経系の疾患','G35-G37 中枢神経系の脱髄疾患',''],
+      ['G43','片頭痛','Migraine','VI','神経系の疾患','G40-G47 発作性及び発作性疾患',''],
+
+      // Chapter IX: 循環器系の疾患 (I00-I99)
+      ['I10','本態性高血圧','Essential hypertension','IX','循環器系の疾患','I10-I15 高血圧性疾患',''],
+      ['I21','急性心筋梗塞','Acute myocardial infarction','IX','循環器系の疾患','I20-I25 虚血性心疾患',''],
+      ['I48','心房細動及び粗動','Atrial fibrillation and flutter','IX','循環器系の疾患','I30-I52 その他の心疾患',''],
+      ['I63','脳梗塞','Cerebral infarction','IX','循環器系の疾患','I60-I69 脳血管疾患',''],
+      ['I64','脳卒中，出血性か梗塞性かの別不明','Stroke, not specified as haemorrhage or infarction','IX','循環器系の疾患','I60-I69 脳血管疾患',''],
+
+      // Chapter X: 呼吸器系の疾患 (J00-J99)
+      ['J00','急性鼻咽頭炎（普通感冒）','Acute nasopharyngitis (common cold)','X','呼吸器系の疾患','J00-J06 急性上気道感染症',''],
+      ['J02','急性咽頭炎','Acute pharyngitis','X','呼吸器系の疾患','J00-J06 急性上気道感染症',''],
+      ['J06','急性上気道感染症，詳細不明','Acute upper respiratory infection, unspecified','X','呼吸器系の疾患','J00-J06 急性上気道感染症',''],
+      ['J18','肺炎，詳細不明','Pneumonia, unspecified','X','呼吸器系の疾患','J10-J18 インフルエンザ及び肺炎',''],
+      ['J30','血管運動性及びアレルギー性鼻炎','Vasomotor and allergic rhinitis','X','呼吸器系の疾患','J30-J39 上気道のその他の疾患','花粉症含む'],
+      ['J45','喘息','Asthma','X','呼吸器系の疾患','J40-J47 慢性下気道疾患',''],
+
+      // Chapter XI: 消化器系の疾患 (K00-K93)
+      ['K21','胃食道逆流症','Gastro-oesophageal reflux disease','XI','消化器系の疾患','K20-K31 食道・胃及び十二指腸の疾患','GERD'],
+      ['K25','胃潰瘍','Gastric ulcer','XI','消化器系の疾患','K20-K31 食道・胃及び十二指腸の疾患',''],
+      ['K57','腸の憩室疾患','Diverticular disease of intestine','XI','消化器系の疾患','K55-K63 腸のその他の疾患',''],
+      ['K80','胆石症','Cholelithiasis','XI','消化器系の疾患','K80-K87 胆嚢・胆道及び膵臓の疾患',''],
+
+      // Chapter XIII: 筋骨格系 (M00-M99)
+      ['M05','血清反応陽性関節リウマチ','Seropositive rheumatoid arthritis','XIII','筋骨格系及び結合組織の疾患','M05-M14 炎症性多発性関節障害',''],
+      ['M54','背部痛','Dorsalgia','XIII','筋骨格系及び結合組織の疾患','M50-M54 脊椎障害','腰痛症含む'],
+
+      // Chapter XIX: 損傷 (S00-T98)
+      ['S52','前腕の骨折','Fracture of forearm','XIX','損傷，中毒及びその他の外因の影響','S50-S59 前腕の損傷','橈骨・尺骨骨折'],
+      ['S72','大腿骨の骨折','Fracture of femur','XIX','損傷，中毒及びその他の外因の影響','S70-S79 股関節及び大腿部の損傷','大腿骨骨折'],
+      ['T14','身体の部位不明の損傷','Injury of unspecified body region','XIX','損傷，中毒及びその他の外因の影響','T08-T14 身体の複数部位及び部位不明の損傷',''],
+
+      // Chapter XXI: 健康状態に影響する要因 (Z00-Z99)
+      ['Z00','一般的健康診察','General examination and investigation','XXI','健康状態及び保健サービスの利用に影響する要因','Z00-Z13 一般的健康診察及び検診',''],
+      ['Z23','予防接種','Need for immunization against single bacterial diseases','XXI','健康状態及び保健サービスの利用に影響する要因','Z20-Z29 感染症に関連する者',''],
+    ];
+
+    // Build lookup map
+    const byCode = {};
+    ICD10_DATA.forEach(d => { byCode[d[0].toLowerCase()] = d; });
+
+    const CHAPTER_COLORS = {
+      'I':   'bg-red-100 text-red-800',
+      'II':  'bg-purple-100 text-purple-800',
+      'III': 'bg-pink-100 text-pink-800',
+      'IV':  'bg-yellow-100 text-yellow-800',
+      'V':   'bg-indigo-100 text-indigo-800',
+      'VI':  'bg-blue-100 text-blue-800',
+      'IX':  'bg-orange-100 text-orange-800',
+      'X':   'bg-green-100 text-green-800',
+      'XI':  'bg-teal-100 text-teal-800',
+      'XIII':'bg-cyan-100 text-cyan-800',
+      'XIX': 'bg-gray-100 text-gray-800',
+      'XXI': 'bg-lime-100 text-lime-800',
+    };
+
+    const STORAGE_KEY = 'icd10_recent_searches';
+    let recentSearches = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+
+    function saveRecent(code) {
+      recentSearches = [code, ...recentSearches.filter(c => c !== code)].slice(0, 8);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(recentSearches));
+      renderRecent();
+    }
+
+    function renderRecent() {
+      const listEl = document.getElementById('recent-list');
+      listEl.innerHTML = '';
+      if (recentSearches.length === 0) {
+        const msg = document.createElement('span');
+        msg.className = 'text-xs text-gray-400';
+        msg.textContent = '履歴なし';
+        listEl.appendChild(msg);
+        return;
+      }
+      recentSearches.forEach(code => {
+        const item = ICD10_DATA.find(d => d[0] === code);
+        const btn = document.createElement('button');
+        btn.className = 'text-xs bg-blue-100 text-blue-800 px-3 py-1 rounded-full hover:bg-blue-200 transition focus:outline-none focus:ring-2 focus:ring-blue-400';
+        btn.setAttribute('aria-label', `${code}を再検索`);
+        btn.textContent = item ? `${code} ${item[1]}` : code;
+        btn.addEventListener('click', () => {
+          document.getElementById('search-input').value = code;
+          doSearch(code);
+        });
+        listEl.appendChild(btn);
+      });
+    }
+
+    function doSearch(query) {
+      const q = query.trim();
+      document.getElementById('initial-msg').classList.add('hidden');
+      document.getElementById('no-result').classList.add('hidden');
+      document.getElementById('clear-btn').classList.toggle('hidden', !q);
+
+      if (!q) {
+        document.getElementById('results-list').innerHTML = '';
+        document.getElementById('result-count').classList.add('hidden');
+        document.getElementById('initial-msg').classList.remove('hidden');
+        return;
+      }
+
+      const ql = q.toLowerCase();
+      const results = ICD10_DATA.filter(d =>
+        d[0].toLowerCase().startsWith(ql) ||
+        d[1].includes(q) ||
+        d[2].toLowerCase().includes(ql) ||
+        d[4].includes(q) ||
+        d[5].includes(q)
+      );
+
+      renderResults(results, q);
+      hideAutocomplete();
+    }
+
+    function renderResults(results, query) {
+      const listEl = document.getElementById('results-list');
+      const countEl = document.getElementById('result-count');
+      listEl.innerHTML = '';
+
+      if (results.length === 0) {
+        document.getElementById('no-result').classList.remove('hidden');
+        countEl.classList.add('hidden');
+        return;
+      }
+
+      countEl.textContent = `${results.length}件見つかりました`;
+      countEl.classList.remove('hidden');
+
+      results.forEach(d => {
+        const [code, nameJa, nameEn, chapterNum, chapterName, block, category, notes] = d;
+        const colorClass = CHAPTER_COLORS[chapterNum] || 'bg-gray-100 text-gray-800';
+
+        const card = document.createElement('div');
+        card.className = 'bg-white rounded-xl border border-gray-200 p-4 cursor-pointer hover:border-blue-300 hover:shadow-md transition focus-within:ring-2 focus-within:ring-blue-400';
+        card.setAttribute('role', 'article');
+
+        const inner = document.createElement('button');
+        inner.className = 'w-full text-left focus:outline-none';
+        inner.setAttribute('aria-label', `${code} ${nameJa}の詳細を表示`);
+
+        const topRow = document.createElement('div');
+        topRow.className = 'flex items-start gap-3 mb-2';
+
+        const codeBadge = document.createElement('span');
+        codeBadge.className = 'text-xl font-black font-mono text-blue-800 flex-shrink-0';
+        codeBadge.textContent = code;
+
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'flex-1 min-w-0';
+        const nameJaEl = document.createElement('div');
+        nameJaEl.className = 'font-semibold text-gray-800 text-sm';
+        nameJaEl.textContent = nameJa;
+        const nameEnEl = document.createElement('div');
+        nameEnEl.className = 'text-gray-400 text-xs truncate';
+        nameEnEl.textContent = nameEn;
+        nameDiv.appendChild(nameJaEl);
+        nameDiv.appendChild(nameEnEl);
+
+        topRow.appendChild(codeBadge);
+        topRow.appendChild(nameDiv);
+
+        const badges = document.createElement('div');
+        badges.className = 'flex flex-wrap gap-1.5 text-xs';
+        const chBadge = document.createElement('span');
+        chBadge.className = `px-2 py-0.5 rounded-full font-medium ${colorClass}`;
+        chBadge.textContent = `第${chapterNum}章 ${chapterName}`;
+        const blockBadge = document.createElement('span');
+        blockBadge.className = 'px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600';
+        blockBadge.textContent = block;
+        badges.appendChild(chBadge);
+        badges.appendChild(blockBadge);
+
+        inner.appendChild(topRow);
+        inner.appendChild(badges);
+        inner.addEventListener('click', () => openModal(d));
+        card.appendChild(inner);
+        listEl.appendChild(card);
+      });
+    }
+
+    function openModal(d) {
+      const [code, nameJa, nameEn, chapterNum, chapterName, block, category, notes] = d;
+      const colorClass = CHAPTER_COLORS[chapterNum] || 'bg-gray-100 text-gray-800';
+
+      document.getElementById('modal-code').textContent = code;
+      document.getElementById('modal-title').textContent = nameJa;
+      document.getElementById('modal-name-en').textContent = nameEn;
+      const badge = document.getElementById('modal-chapter-badge');
+      badge.textContent = `第${chapterNum}章`;
+      badge.className = `mt-1 inline-block text-xs px-2 py-0.5 rounded-full font-medium ${colorClass}`;
+      document.getElementById('modal-chapter').textContent = chapterName;
+      document.getElementById('modal-block').textContent = block;
+      document.getElementById('modal-category').textContent = `${code.charAt(0)} (${chapterNum}章)`;
+
+      const notesEl = document.getElementById('modal-notes');
+      if (notes) {
+        document.getElementById('modal-notes-text').textContent = notes;
+        notesEl.classList.remove('hidden');
+      } else {
+        notesEl.classList.add('hidden');
+      }
+
+      document.getElementById('detail-modal').classList.remove('hidden');
+      document.getElementById('modal-close').focus();
+      saveRecent(code);
+    }
+
+    function closeModal() {
+      document.getElementById('detail-modal').classList.add('hidden');
+    }
+
+    function showAutocomplete(q) {
+      const ql = q.toLowerCase();
+      if (!ql || ql.length < 1) { hideAutocomplete(); return; }
+
+      const matches = ICD10_DATA.filter(d =>
+        d[0].toLowerCase().startsWith(ql) ||
+        d[1].startsWith(q) ||
+        d[2].toLowerCase().startsWith(ql)
+      ).slice(0, 8);
+
+      const box = document.getElementById('autocomplete');
+      if (matches.length === 0) { hideAutocomplete(); return; }
+
+      box.innerHTML = '';
+      matches.forEach(d => {
+        const colorClass = CHAPTER_COLORS[d[3]] || 'bg-gray-100 text-gray-800';
+        const item = document.createElement('div');
+        item.className = 'px-4 py-2.5 cursor-pointer hover:bg-blue-50 flex items-center gap-3 border-b border-gray-100 last:border-0';
+        item.setAttribute('role', 'option');
+        item.setAttribute('aria-label', `${d[0]} ${d[1]}`);
+
+        const codeBadge = document.createElement('span');
+        codeBadge.className = 'font-mono font-bold text-blue-800 text-sm w-12 flex-shrink-0';
+        codeBadge.textContent = d[0];
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'text-gray-700 text-sm flex-1 truncate';
+        nameEl.textContent = d[1];
+
+        const chBadge = document.createElement('span');
+        chBadge.className = `text-xs px-1.5 py-0.5 rounded-full ${colorClass} flex-shrink-0`;
+        chBadge.textContent = d[3];
+
+        item.appendChild(codeBadge);
+        item.appendChild(nameEl);
+        item.appendChild(chBadge);
+
+        item.addEventListener('click', () => {
+          document.getElementById('search-input').value = d[0];
+          doSearch(d[0]);
+        });
+        box.appendChild(item);
+      });
+      box.classList.remove('hidden');
+    }
+
+    function hideAutocomplete() {
+      document.getElementById('autocomplete').classList.add('hidden');
+    }
+
+    // Event listeners
+    const searchInput = document.getElementById('search-input');
+    searchInput.addEventListener('input', e => {
+      showAutocomplete(e.target.value.trim());
+      document.getElementById('clear-btn').classList.toggle('hidden', !e.target.value);
+    });
+    searchInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') doSearch(searchInput.value);
+      if (e.key === 'Escape') hideAutocomplete();
+    });
+
+    document.getElementById('clear-btn').addEventListener('click', () => {
+      searchInput.value = '';
+      doSearch('');
+      document.getElementById('clear-btn').classList.add('hidden');
+      hideAutocomplete();
+    });
+
+    document.getElementById('clear-history-btn').addEventListener('click', () => {
+      recentSearches = [];
+      localStorage.setItem(STORAGE_KEY, '[]');
+      renderRecent();
+    });
+
+    document.getElementById('modal-close').addEventListener('click', closeModal);
+    document.getElementById('detail-modal').addEventListener('click', e => {
+      if (e.target === document.getElementById('detail-modal')) closeModal();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeModal();
+    });
+    document.addEventListener('click', e => {
+      if (!e.target.closest('#autocomplete') && !e.target.closest('#search-input')) hideAutocomplete();
+    });
+
+    renderRecent();
+  </script>
+</body>
+</html>
